@@ -1,0 +1,57 @@
+---
+title: "Notebook for interacting with Aircloak"
+output: html_notebook
+---
+
+```{r}
+library(ggplot2)
+```
+
+This notebook is a scaffold for querying Aircloak from R.
+
+Since Aircloak Insights exposes a Postgres interface, you can query it using
+the `RPostgreSQL` library (you might have to install it first).
+
+```{r}
+library("RPostgreSQL")
+
+drv  <- dbDriver("PostgreSQL")
+conn <- dbConnect(drv, dbname = "GamesAndPlayers",
+                 host = "<HOST>", port = 5432,
+                 user = "<USER>", 
+                 password = "<PASSWORD>")
+```
+
+Which then allows you to query your database through Aircloak:
+
+```{r}
+ageDistribution <- dbGetQuery(conn, "SELECT age, count(*) FROM players GROUP BY age")
+ggplot(data=ageDistribution, aes(x=age, y=count)) +
+  geom_col() +  
+  ylab("Number of players") +
+  xlab("Age")
+```
+
+When working with sparse datasets, parts of your data might get anonymized away.
+If the processing you are planning to do relies on the dataset being of a certain kind,
+you might need to do further processing first, like omitting null values, and casting types:
+
+```{r}
+maxAgePerName <- dbGetQuery(conn, "
+  SELECT lastname, max(age) as maxAge, count(distinct uid)
+  FROM players 
+  GROUP BY lastname
+")
+# Remove the entries where we do not have a max age
+maxAgePerName <- na.omit(maxAgePerName)
+# Only keep entries where we have more than 10 distinct users
+maxAgePerName <- maxAgePerName[maxAgePerName$count > 10,]
+
+# And now for some very scientific plotting of data
+maxAgePerName$nameLength <- nchar(maxAgePerName$lastname)
+ggplot(data=maxAgePerName, aes(x=nameLength, y=maxAge)) +
+  geom_point() +
+  geom_smooth() +
+  ylab("Maximum age") + xlab("Name length")
+```
+
